@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>加古川線 電車モデル編成ジェネレーター</title>
+<title>加古川線 3Dモデルジェネレーター</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -104,11 +104,27 @@
     grid-template-columns: 1fr 1fr;
     gap: 12px;
   }
-  .carcount {
+  .carcount, .modeswitch {
     display: flex;
     gap: 8px;
   }
-  .carcount button {
+  .hide { display: none !important; }
+  .checkrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-bottom: 0;
+  }
+  .checkrow input { width: auto; margin: 0; }
+  .truss-preview {
+    margin-top: 10px;
+    background: #fbfaf5;
+    border: 1px solid #e2ded0;
+    border-radius: 6px;
+    padding: 8px 10px 4px;
+  }
+  .carcount button, .modeswitch button {
     flex: 1;
     padding: 10px 0;
     border: 1px solid #cfcabb;
@@ -119,7 +135,7 @@
     color: var(--ink);
     transition: all .12s ease;
   }
-  .carcount button.active {
+  .carcount button.active, .modeswitch button.active {
     background: var(--teal);
     border-color: var(--teal);
     color: #fff;
@@ -226,12 +242,23 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="plate">JR KAKOGAWA LINE &middot; MODEL BUILDER</div>
-    <h1>加古川線 電車モデル編成ジェネレーター</h1>
-    <p class="sub">車両数と先頭車両の位置を指定して、Google Earth Pro用のKMLファイルを書き出します。</p>
+    <div class="plate">JR KAKOGAWA LINE &middot; TRAIN &amp; TRUSS BUILDER</div>
+    <h1>加古川線 3Dモデルジェネレーター</h1>
+    <p class="sub">列車またはトラス橋を選び、位置と向きを指定して Google Earth Pro 用の KML / KMZ ファイルを書き出します。</p>
   </header>
 
   <fieldset>
+    <legend>配置するもの</legend>
+    <div class="row">
+      <div class="modeswitch" id="modeswitch">
+        <button type="button" data-mode="train">🚃 列車</button>
+        <button type="button" data-mode="truss">🌉 トラス橋</button>
+      </div>
+      <div class="hint" id="modeHint"></div>
+    </div>
+  </fieldset>
+
+  <fieldset id="trainFs">
     <legend>編成</legend>
     <div class="row">
       <label>車両数</label>
@@ -246,8 +273,38 @@
     </div>
   </fieldset>
 
+  <fieldset id="trussFs" class="hide">
+    <legend>トラス橋の寸法</legend>
+    <div class="row grid2">
+      <div>
+        <label>支間長（両端の支点間 / m）</label>
+        <input type="number" id="tSpan" min="5" max="300" step="0.5" value="68">
+      </div>
+      <div>
+        <label>桁高（下弦材〜上弦材 / m）</label>
+        <input type="number" id="tHeight" min="1" max="40" step="0.1" value="8">
+      </div>
+    </div>
+    <div class="row grid2">
+      <div>
+        <label>幅（左右トラスの間隔 / m）</label>
+        <input type="number" id="tWidth" min="1" max="40" step="0.1" value="5.8">
+      </div>
+      <div>
+        <label>パネル数（斜材の割り数）</label>
+        <input type="number" id="tPanels" min="4" max="24" step="1" value="12">
+      </div>
+    </div>
+    <div class="row">
+      <label>部材の太さ（m）</label>
+      <input type="number" id="tThick" min="0.05" max="3" step="0.05" value="0.35">
+      <div class="truss-preview" id="trussPreview"></div>
+      <div class="hint">初期値はいただいた写真から、列車（20m）を定規にして実測した値です（支間68m / 桁高8m / 幅5.8m / 12パネル）。真上の写真からは支間66m、真横からは70mと読めたので支間長は±3m程度の誤差があります。パネル数が一番不確かで、端柱の傾きからは15、斜材の角度からは13と出たため中間の12にしました。上のプレビューを写真と見比べて合わせてください。衛星写真に切り替えれば、地図の緑の枠を実際の橋脚に合わせられます。</div>
+    </div>
+  </fieldset>
+
   <fieldset>
-    <legend>先頭車両（1両目）の位置</legend>
+    <legend id="posLegend">先頭車両（1両目）の位置</legend>
     <div class="row">
       <label>地図上でドラッグして位置と向きを決める</label>
       <div class="map-toolbar">
@@ -255,9 +312,9 @@
       </div>
       <div id="map"></div>
       <div class="map-legend">
-        <span><span class="dot front"></span>先頭位置（ドラッグで移動）</span>
-        <span><span class="dot aim"></span>方向ハンドル（ドラッグで進行方向を調整）</span>
-        <span><span class="swatch"></span>編成の footprint（車両数に応じて自動更新）</span>
+        <span><span class="dot front"></span><span id="legFront"></span></span>
+        <span><span class="dot aim"></span><span id="legAim"></span></span>
+        <span><span class="swatch"></span><span id="legFoot"></span></span>
       </div>
     </div>
     <div class="row">
@@ -281,16 +338,34 @@
     <div class="row">
       <label>進行方向（ヘディング / 0=北, 90=東, 180=南, 270=西）</label>
       <input type="number" id="heading" min="0" max="359" step="1" value="0">
-      <div class="hint">指定した座標は「1両目の一番先頭（進行方向側の先端）」になります。編成はここから進行方向の逆側へ連結されます。</div>
+      <div class="hint" id="headHint"></div>
     </div>
     <div class="row">
       <label>標高調整（地表からの高さ、メートル）</label>
       <input type="number" id="altOffset" step="0.5" value="0">
-      <div class="hint">鉄橋の上など、地表より高い場所に列車を置きたい場合はプラスの値を入れてください（例: 橋の高さが6mなら6）。マイナス値で下げることもできます。</div>
+      <div class="hint">鉄橋の上など、地表より高い場所に置きたい場合はプラスの値を入れてください（例: 橋の高さが6mなら6）。マイナス値で下げることもできます。列車の y=0 とトラスの下弦材は同じ高さなので、両方に同じ値を使えば桁の上に列車が乗ります。</div>
     </div>
   </fieldset>
 
-  <button class="go" id="goBtn">KMLファイルを生成してダウンロード</button>
+  <fieldset>
+    <legend>出力形式</legend>
+    <div class="row">
+      <div class="modeswitch" id="fmtswitch">
+        <button type="button" data-fmt="kml">KML</button>
+        <button type="button" data-fmt="kmz">KMZ（3Dモデル）</button>
+      </div>
+      <div class="hint" id="fmtHint"></div>
+    </div>
+    <div class="row" id="bakeRow">
+      <label class="checkrow">
+        <input type="checkbox" id="bakeHeading" checked>
+        <span>進行方向をメッシュに焼き込む</span>
+      </label>
+      <div class="hint">オンにすると、回転を適用済みのメッシュを書き出し、doc.kml の heading は 0 になります。読み込み側が自前の回転でモデルを歪ませる場合に有効です。オフにするとメッシュは向き0のままで、doc.kml の heading に方位を持たせます。</div>
+    </div>
+  </fieldset>
+
+  <button class="go" id="goBtn">モデルを生成してダウンロード</button>
   <div class="status" id="status"></div>
   <p class="save-note">入力内容はこのブラウザにCookieとして保存され、次回開いたときに復元されます。</p>
 </div>
@@ -336,6 +411,8 @@ function bearingBetween(lat1, lon1, lat2, lon2) {
 }
 
 let numCars = 1;
+let mode = "train";           // "train" | "truss"
+let fmt = "kml";              // "kml" | "kmz"
 let map, frontMarker, aimMarker, aimLine, footprint;
 const HALF_W = 1.45;
 const CAR_LEN = 20.0;
@@ -348,6 +425,120 @@ const pasteEl = document.getElementById("pasteBox");
 const statusEl = document.getElementById("status");
 const previewEl = document.getElementById("preview");
 const carButtons = [...document.querySelectorAll("#carcount button")];
+const modeButtons = [...document.querySelectorAll("#modeswitch button")];
+const fmtButtons = [...document.querySelectorAll("#fmtswitch button")];
+const bakeEl = document.getElementById("bakeHeading");
+const bakeRow = document.getElementById("bakeRow");
+const trainFs = document.getElementById("trainFs");
+const trussFs = document.getElementById("trussFs");
+const tSpanEl = document.getElementById("tSpan");
+const tHeightEl = document.getElementById("tHeight");
+const tWidthEl = document.getElementById("tWidth");
+const tPanelsEl = document.getElementById("tPanels");
+const tThickEl = document.getElementById("tThick");
+const trussInputs = [tSpanEl, tHeightEl, tWidthEl, tPanelsEl, tThickEl];
+const goBtn = document.getElementById("goBtn");
+
+function trussParams() {
+  const g = (el, def, min, max) => {
+    const v = parseFloat(el.value);
+    return isNaN(v) ? def : Math.min(max, Math.max(min, v));
+  };
+  return {
+    span:   g(tSpanEl, 68, 5, 300),
+    height: g(tHeightEl, 8, 1, 40),
+    width:  g(tWidthEl, 5.8, 1, 40),
+    panels: Math.round(g(tPanelsEl, 12, 4, 24)),
+    thick:  g(tThickEl, 0.35, 0.05, 3)
+  };
+}
+
+// Side elevation, so the panel count and proportions are visible while editing.
+function updateTrussPreview() {
+  const P = trussParams();
+  const W = 660, PAD = 10;
+  const sc = (W - PAD*2) / P.span;
+  const H = P.height*sc + PAD*2;
+  const X = x => (PAD + x*sc).toFixed(1);
+  const Y = y => (H - PAD - y*sc).toFixed(1);
+  const p = P.span / P.panels;
+  const seg = [];
+  const ln = (x1,y1,x2,y2,w) => seg.push(`<line x1="${X(x1)}" y1="${Y(y1)}" x2="${X(x2)}" y2="${Y(y2)}" stroke-width="${w}"/>`);
+  ln(0, 0, P.span, 0, 2.4);                    // bottom chord
+  ln(p, P.height, P.span-p, P.height, 2.4);    // top chord
+  ln(0, 0, p, P.height, 2.1);                  // inclined end posts
+  ln(P.span, 0, P.span-p, P.height, 2.1);
+  for (let k=1; k<P.panels; k++) ln(k*p, 0, k*p, P.height, 1.2);
+  for (let k=1; k<=P.panels-2; k++) {
+    const yA = (k%2) ? P.height : 0, yB = (k%2) ? 0 : P.height;
+    ln(k*p, yA, (k+1)*p, yB, 1.7);
+  }
+  document.getElementById("trussPreview").innerHTML =
+    `<svg viewBox="0 0 ${W} ${H.toFixed(1)}" style="width:100%;height:auto;display:block">` +
+    `<g stroke="#7C6578" fill="none" stroke-linecap="round">${seg.join("")}</g></svg>`;
+}
+
+const MODE_TEXT = {
+  train: {
+    hint: "列車の編成を配置します。",
+    legend: "先頭車両（1両目）の位置",
+    front: "先頭位置（ドラッグで移動）",
+    aim: "方向ハンドル（ドラッグで進行方向を調整）",
+    foot: "編成の footprint（車両数に応じて自動更新）",
+    head: "指定した座標は「1両目の一番先頭（進行方向側の先端）」になります。編成はここから進行方向の逆側へ連結されます。",
+    go: "列車のモデルを生成してダウンロード"
+  },
+  truss: {
+    hint: "下路式ワーレントラス（垂直材付き）を配置します。",
+    legend: "トラス橋の位置",
+    front: "起点側の端（ドラッグで移動）",
+    aim: "終点側の端（ドラッグで向きと支間長を同時に決定）",
+    foot: "トラスの footprint（支間長×幅）",
+    head: "赤い点がトラスの片方の端、青い点がもう片方の端です。青い点を向こう岸の橋台に合わせれば、向きと支間長が自動で決まります。",
+    go: "トラス橋のモデルを生成してダウンロード"
+  }
+};
+
+function setMode(m) {
+  mode = (m === "truss") ? "truss" : "train";
+  const T = MODE_TEXT[mode];
+  modeButtons.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  trainFs.classList.toggle("hide", mode !== "train");
+  trussFs.classList.toggle("hide", mode !== "truss");
+  document.getElementById("modeHint").textContent = T.hint;
+  document.getElementById("posLegend").textContent = T.legend;
+  document.getElementById("legFront").textContent = T.front;
+  document.getElementById("legAim").textContent = T.aim;
+  document.getElementById("legFoot").textContent = T.foot;
+  document.getElementById("headHint").textContent = T.head;
+  goBtn.textContent = T.go;
+  updateTrussPreview();
+  persist();
+  if (aimMarker) updateAimMarker();
+  if (footprint) redrawFootprint();
+}
+modeButtons.forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+
+const FMT_TEXT = {
+  kml: "KML Polygon の集まりです。Google Earth Pro 向け。",
+  kmz: "COLLADA（model.dae）の3Dメッシュを doc.kml と一緒に収めたZIPです。KMZ内の .dae を読む3Dソフト向け。面はポリゴンではなく三角形メッシュになります。"
+};
+function setFormat(f) {
+  // older saved settings used "dae" for what is now simply the KMZ output
+  fmt = (f === "kmz" || f === "dae") ? "kmz" : "kml";
+  fmtButtons.forEach(b => b.classList.toggle("active", b.dataset.fmt === fmt));
+  document.getElementById("fmtHint").textContent = FMT_TEXT[fmt];
+  bakeRow.classList.toggle("hide", fmt !== "kmz");
+  persist();
+}
+fmtButtons.forEach(b => b.addEventListener("click", () => setFormat(b.dataset.fmt)));
+bakeEl.addEventListener("change", persist);
+trussInputs.forEach(el => el.addEventListener("input", () => {
+  persist();
+  updateTrussPreview();
+  if (aimMarker) updateAimMarker();
+  if (footprint) redrawFootprint();
+}));
 
 function setNumCars(n) {
   numCars = n;
@@ -382,11 +573,18 @@ altOffsetEl.addEventListener("input", persist);
 
 function persist() {
   saveCookie({
+    mode,
+    fmt,
+    bake: bakeEl.checked,
     numCars,
     lat: latEl.value,
     lon: lonEl.value,
     heading: headingEl.value,
-    altOffset: altOffsetEl.value
+    altOffset: altOffsetEl.value,
+    truss: {
+      span: tSpanEl.value, height: tHeightEl.value, width: tWidthEl.value,
+      panels: tPanelsEl.value, thick: tThickEl.value
+    }
   });
 }
 
@@ -398,9 +596,22 @@ function persist() {
     if (d.lon) lonEl.value = d.lon;
     if (d.heading !== undefined) headingEl.value = d.heading;
     if (d.altOffset !== undefined) altOffsetEl.value = d.altOffset;
+    if (d.truss) {
+      const t = d.truss;
+      if (t.span   !== undefined) tSpanEl.value = t.span;
+      if (t.height !== undefined) tHeightEl.value = t.height;
+      if (t.width  !== undefined) tWidthEl.value = t.width;
+      if (t.panels !== undefined) tPanelsEl.value = t.panels;
+      if (t.thick  !== undefined) tThickEl.value = t.thick;
+    }
+    if (d.bake !== undefined) bakeEl.checked = !!d.bake;
     setNumCars(d.numCars || 1);
+    setMode(d.mode);
+    setFormat(d.fmt);
   } else {
     setNumCars(1);
+    setMode("train");
+    setFormat("kml");
   }
 })();
 
@@ -410,6 +621,11 @@ function persist() {
 // ---------------------------------------------------------------
 const DEFAULT_LAT = 35.01089650940908;
 const DEFAULT_LON = 134.99792882455134;
+
+// On a first visit the fields are empty while the map markers already sit at
+// the default spot, so pressing generate would fail. Seed them to match.
+if (!latEl.value) latEl.value = DEFAULT_LAT.toFixed(7);
+if (!lonEl.value) lonEl.value = DEFAULT_LON.toFixed(7);
 
 function currentLatLon() {
   const lat = parseFloat(latEl.value);
@@ -430,22 +646,36 @@ function dotIcon(color) {
     iconSize: [16,16], iconAnchor: [8,8]
   });
 }
+// The consist hangs off the anchor towards the rear; the truss runs forward
+// from the anchor to the far abutment.
+function farEndAndHalfWidth() {
+  const [lat, lon] = currentLatLon();
+  const heading = currentHeading();
+  if (mode === "truss") {
+    const P = trussParams();
+    return [destinationPoint(lat, lon, heading, P.span), P.width/2 + P.thick];
+  }
+  return [destinationPoint(lat, lon, heading+180, trainTotalLength()), HALF_W];
+}
 function redrawFootprint() {
   const [lat, lon] = currentLatLon();
   const heading = currentHeading();
-  const totalLen = trainTotalLength();
-  const halfW = HALF_W;
-  const fl = destinationPoint(lat, lon, heading-90, halfW);
-  const fr = destinationPoint(lat, lon, heading+90, halfW);
-  const rear = destinationPoint(lat, lon, heading+180, totalLen);
-  const rl = destinationPoint(rear[0], rear[1], heading-90, halfW);
-  const rr = destinationPoint(rear[0], rear[1], heading+90, halfW);
-  footprint.setLatLngs([fl, fr, rr, rl]);
+  const [far, halfW] = farEndAndHalfWidth();
+  const a = destinationPoint(lat, lon, heading-90, halfW);
+  const b = destinationPoint(lat, lon, heading+90, halfW);
+  const c = destinationPoint(far[0], far[1], heading+90, halfW);
+  const d = destinationPoint(far[0], far[1], heading-90, halfW);
+  footprint.setLatLngs([a, b, c, d]);
+}
+// In truss mode the blue handle IS the far end of the span, so it sits at the
+// real span distance rather than a fixed 30 m.
+function aimDistance() {
+  return mode === "truss" ? trussParams().span : 30;
 }
 function updateAimMarker() {
   const [lat, lon] = currentLatLon();
   const heading = currentHeading();
-  const aimPos = destinationPoint(lat, lon, heading, 30);
+  const aimPos = destinationPoint(lat, lon, heading, aimDistance());
   aimMarker.setLatLng(aimPos);
   aimLine.setLatLngs([[lat, lon], aimPos]);
 }
@@ -500,7 +730,7 @@ function initMap() {
   aimLine = L.polyline([[lat,lon],[lat,lon]], { color: "#2a6fd6", weight: 2, dashArray: "4,4" }).addTo(map);
 
   frontMarker = L.marker([lat, lon], { icon: dotIcon("#d64545"), draggable: true }).addTo(map);
-  aimMarker = L.marker(destinationPoint(lat, lon, currentHeading(), 30), { icon: dotIcon("#2a6fd6"), draggable: true }).addTo(map);
+  aimMarker = L.marker(destinationPoint(lat, lon, currentHeading(), aimDistance()), { icon: dotIcon("#2a6fd6"), draggable: true }).addTo(map);
 
   frontMarker.on("drag", () => {
     const p = frontMarker.getLatLng();
@@ -516,6 +746,11 @@ function initMap() {
     const front = frontMarker.getLatLng();
     const aim = aimMarker.getLatLng();
     headingEl.value = Math.round(bearingBetween(front.lat, front.lng, aim.lat, aim.lng));
+    if (mode === "truss") {
+      // dragging the far end also sets the span
+      tSpanEl.value = Math.min(300, Math.max(5, map.distance(front, aim))).toFixed(1);
+      updateTrussPreview();
+    }
     aimLine.setLatLngs([front, aim]);
     redrawFootprint();
   });
@@ -555,7 +790,9 @@ const COLORS = {
   DOOR: kmlColor(205,208,208),
   DARKGRAY: kmlColor(80,80,80),
   BOGIE: kmlColor(40,40,40),
-  HEADLIGHT: kmlColor(255,250,220)
+  HEADLIGHT: kmlColor(255,250,220),
+  TRUSS: kmlColor(124,101,120),
+  TRUSS_DARK: kmlColor(100,81,98)
 };
 
 // ---------------------------------------------------------------
@@ -645,12 +882,15 @@ function buildCarFaces() {
       for (const dir of [-1, 1]) {
         if (faceCovered(b, solids, axis, dir)) continue;
         const plane = dir < 0 ? b[axis*2] : b[axis*2+1];
-        faces.push([b[6], quadOnPlane(axis, plane, b[u*2], b[u*2+1], b[v*2], b[v*2+1])]);
+        const n = [0,0,0]; n[axis] = dir;
+        faces.push([b[6], quadOnPlane(axis, plane, b[u*2], b[u*2+1], b[v*2], b[v*2+1]), n]);
       }
     }
   }
   for (const [axis, plane, u0, u1, v0, v1, color] of panels) {
-    faces.push([color, quadOnPlane(axis, plane, u0, u1, v0, v1)]);
+    // decals sit on the outside of the body, so the plane's sign is the normal
+    const n = [0,0,0]; n[axis] = plane >= 0 ? 1 : -1;
+    faces.push([color, quadOnPlane(axis, plane, u0, u1, v0, v1), n]);
   }
   return faces;
 }
@@ -658,23 +898,99 @@ function buildCarFaces() {
 const CAR_FACES = buildCarFaces();
 
 const PART_NAMES = {
-  [COLORS.GRAY_SKIRT]: "\u5e8a\u4e0b\u30fb\u30b9\u30ab\u30fc\u30c8",
-  [COLORS.LITEBLUE]:   "\u5e2f\uff08\u30e9\u30a4\u30c8\u30d6\u30eb\u30fc\uff09",
-  [COLORS.CREAM]:      "\u8eca\u4f53\uff08\u30af\u30ea\u30fc\u30e0\uff09",
-  [COLORS.TEAL]:       "\u5c4b\u6839\u80a9\uff08\u30b0\u30ea\u30fc\u30f3\uff09",
-  [COLORS.GRAY_ROOF]:  "\u5c4b\u6839",
-  [COLORS.DARKGRAY]:   "\u51b7\u623f\u30fb\u30d1\u30f3\u30bf\u30b0\u30e9\u30d5",
-  [COLORS.BOGIE]:      "\u53f0\u8eca",
-  [COLORS.GLASS]:      "\u7a93\u30ac\u30e9\u30b9",
-  [COLORS.DOOR]:       "\u30c9\u30a2"
+  [COLORS.GRAY_SKIRT]: "床下・スカート",
+  [COLORS.LITEBLUE]:   "帯（ライトブルー）",
+  [COLORS.CREAM]:      "車体（クリーム）",
+  [COLORS.TEAL]:       "屋根肩（グリーン）",
+  [COLORS.GRAY_ROOF]:  "屋根",
+  [COLORS.DARKGRAY]:   "冷房・パンタグラフ",
+  [COLORS.BOGIE]:      "台車",
+  [COLORS.GLASS]:      "窓ガラス",
+  [COLORS.DOOR]:       "ドア",
+  [COLORS.TRUSS]:      "トラス（弦材・斜材）",
+  [COLORS.TRUSS_DARK]: "横構・床桁"
 };
 
-function generateKML(numCars, lat0, lon0, headingDeg, altOffset) {
+// ---------------------------------------------------------------
+// Oriented member (strut): a rectangular bar from p0 to p1. Truss
+// diagonals are not axis aligned, so the box builder is not enough.
+// ---------------------------------------------------------------
+function cross(a, b) {
+  return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+}
+function strutFaces(p0, p1, a, b, color) {
+  const d = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+  const len = Math.hypot(d[0], d[1], d[2]);
+  if (len < 1e-9) return [];
+  const u = d.map(v => v/len);
+  const up = Math.abs(u[1]) < 0.9 ? [0,1,0] : [1,0,0];
+  let v = cross(u, up);
+  const vl = Math.hypot(v[0], v[1], v[2]);
+  v = v.map(t => t/vl);
+  const w = cross(u, v);
+  const c = (end, i, j) => {
+    const P = end ? p1 : p0;
+    return [0,1,2].map(k => P[k] + i*(a/2)*v[k] + j*(b/2)*w[k]);
+  };
+  const A = c(0,-1,-1), B = c(0,-1,1), C = c(0,1,1), D = c(0,1,-1);
+  const E = c(1,-1,-1), F = c(1,-1,1), G = c(1,1,1), H = c(1,1,-1);
+  const neg = t => [-t[0], -t[1], -t[2]];
+  // each entry is [colour, quad, outward normal]
+  return [
+    [color, [A,B,C,D], neg(u)], [color, [E,H,G,F], u],
+    [color, [A,D,H,E], neg(w)], [color, [B,F,G,C], w],
+    [color, [A,E,F,B], neg(v)], [color, [D,C,G,H], v]
+  ];
+}
+
+// ---------------------------------------------------------------
+// Through-type Warren truss with verticals, in the shared local frame:
+//   x = 0..span along the deck, y = up from the bottom chord,
+//   z = across the deck (-width/2 .. +width/2)
+// ---------------------------------------------------------------
+function buildTrussFaces(P) {
+  const L = P.span, H = P.height, N = P.panels, t = P.thick;
+  const hz = P.width/2, p = L/N;
+  const S = COLORS.TRUSS, S2 = COLORS.TRUSS_DARK;
+  const out = [];
+  const add = (p0, p1, a, b, color) => {
+    for (const f of strutFaces(p0, p1, a, b, color)) out.push(f);
+  };
+
+  for (const z of [-hz, hz]) {
+    add([0,0,z], [L,0,z], t*1.3, t, S);            // bottom chord
+    add([p,H,z], [L-p,H,z], t*1.3, t, S);          // top chord
+    add([0,0,z], [p,H,z], t*1.1, t, S);            // inclined end posts
+    add([L,0,z], [L-p,H,z], t*1.1, t, S);
+    for (let k=1; k<N; k++) add([k*p,0,z], [k*p,H,z], t*0.8, t*0.8, S);
+    for (let k=1; k<=N-2; k++) {                   // Warren zigzag
+      const yA = (k%2) ? H : 0, yB = (k%2) ? 0 : H;
+      add([k*p,yA,z], [(k+1)*p,yB,z], t*0.9, t*0.75, S);
+    }
+  }
+  // upper lateral bracing between the two top chords
+  for (let k=1; k<=N-1; k++) add([k*p,H,-hz], [k*p,H,hz], t*0.8, t*0.8, S2);
+  for (let k=1; k<=N-2; k++) {
+    add([k*p,H,-hz], [(k+1)*p,H, hz], t*0.6, t*0.5, S2);
+    add([k*p,H, hz], [(k+1)*p,H,-hz], t*0.6, t*0.5, S2);
+  }
+  // floor beams carrying the deck
+  for (let k=0; k<=N; k++) add([k*p,0,-hz], [k*p,0,hz], t, t*0.9, S2);
+  return out;
+}
+
+// ---------------------------------------------------------------
+// Shared KML writer. Local frame for every model:
+//   x = forward along the heading, y = up, z = right of the heading.
+// Faces are grouped by colour into one MultiGeometry per folder and the
+// styles live once in the Document.
+// ---------------------------------------------------------------
+function emitKML(o) {
   const R = 6378137.0;
-  const h = headingDeg * Math.PI/180;
+  const h = o.heading * Math.PI/180;
   const cosH = Math.cos(h), sinH = Math.sin(h);
   const degPerM = 180/(Math.PI*R);
-  const lonScale = 1/Math.cos(lat0 * Math.PI/180);
+  const lonScale = 1/Math.cos(o.lat * Math.PI/180);
 
   // Shortest exact decimal: trims trailing zeros instead of padding them.
   function num(v, d) {
@@ -682,16 +998,15 @@ function generateKML(numCars, lat0, lon0, headingDeg, altOffset) {
     if (s.indexOf(".") !== -1) s = s.replace(/0+$/, "").replace(/\.$/, "");
     return s === "-0" ? "0" : s;
   }
-  // gx = distance behind the front tip, z = lateral offset, y = height
-  function coord(gx, y, z) {
-    const north = -gx*cosH - z*sinH;
-    const east  = -gx*sinH + z*cosH;
-    return num(lon0 + east*degPerM*lonScale, 8) + "," +
-           num(lat0 + north*degPerM, 8) + "," +
-           num(y + altOffset, 3);
+  function coord(x, y, z) {
+    const north = x*cosH - z*sinH;
+    const east  = x*sinH + z*cosH;
+    return num(o.lon + east*degPerM*lonScale, 8) + "," +
+           num(o.lat + north*degPerM, 8) + "," +
+           num(y + o.alt, 3);
   }
 
-  const colors = [...new Set(CAR_FACES.map(f => f[0]))];
+  const colors = [...new Set(o.folders.flatMap(f => f.faces.map(t => t[0])))];
   const styleIndex = new Map(colors.map((c,i) => [c,i]));
   const styles = colors.map((c,i) =>
     `<Style id="p${i}"><PolyStyle><color>${c}</color><outline>0</outline></PolyStyle><LineStyle><width>0</width></LineStyle></Style>`
@@ -700,27 +1015,285 @@ function generateKML(numCars, lat0, lon0, headingDeg, altOffset) {
   const HEAD = '<Polygon><altitudeMode>relativeToGround</altitudeMode><outerBoundaryIs><LinearRing><coordinates>';
   const TAIL = '</coordinates></LinearRing></outerBoundaryIs></Polygon>';
 
-  const folders = [];
-  for (let c = 0; c < numCars; c++) {
-    const carOffset = c*(CAR_LEN + CAR_GAP);
+  const folders = o.folders.map(f => {
     const byColor = new Map();
-    for (const [color, quad] of CAR_FACES) {
-      const pts = quad.map(([lx,ly,lz]) => coord(carOffset + (CAR_LEN - lx), ly, lz));
+    for (const [color, quad] of f.faces) {
+      const pts = quad.map(([x,y,z]) => coord(x,y,z));
       pts.push(pts[0]);
       if (!byColor.has(color)) byColor.set(color, []);
       byColor.get(color).push(HEAD + pts.join(" ") + TAIL);
     }
-    // One Placemark per colour, all its faces inside a single MultiGeometry.
     const marks = [...byColor].map(([color, polys]) =>
-      `<Placemark><name>${PART_NAMES[color] || "\u30d1\u30fc\u30c4"}</name><styleUrl>#p${styleIndex.get(color)}</styleUrl><MultiGeometry>${polys.join("")}</MultiGeometry></Placemark>`
+      `<Placemark><name>${PART_NAMES[color] || "パーツ"}</name><styleUrl>#p${styleIndex.get(color)}</styleUrl><MultiGeometry>${polys.join("")}</MultiGeometry></Placemark>`
     ).join("");
-    folders.push(`<Folder><name>${c+1}\u4e21\u76ee</name>${marks}</Folder>`);
-  }
+    return `<Folder><name>${f.name}</name>${marks}</Folder>`;
+  }).join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>JR\u52a0\u53e4\u5ddd\u7dda \u96fb\u8eca\u30e2\u30c7\u30eb (${numCars}\u4e21\u7de8\u6210)</name>\n<description>KML Polygon\u306e\u307f\u3067\u69cb\u6210\u3057\u305f${numCars}\u4e21\u7de8\u6210\u30e2\u30c7\u30eb\u3067\u3059\u3002</description>\n<LookAt><longitude>${lon0}</longitude><latitude>${lat0}</latitude><altitude>${altOffset}</altitude><heading>0</heading><tilt>65</tilt><range>${80+numCars*40}</range><altitudeMode>relativeToGround</altitudeMode></LookAt>\n${styles}\n${folders.join("\n")}\n</Document>\n</kml>\n`;
+  const look = o.look || [o.lat, o.lon];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${o.title}</name>\n<description>${o.desc}</description>\n<LookAt><longitude>${look[1]}</longitude><latitude>${look[0]}</latitude><altitude>${o.alt}</altitude><heading>0</heading><tilt>65</tilt><range>${o.range}</range><altitudeMode>relativeToGround</altitudeMode></LookAt>\n${styles}\n${folders}\n</Document>\n</kml>\n`;
 }
 
-document.getElementById("goBtn").addEventListener("click", () => {
+function generateTrainKML(numCars, lat0, lon0, headingDeg, altOffset) {
+  const folders = [];
+  for (let c = 0; c < numCars; c++) {
+    const carOffset = c*(CAR_LEN + CAR_GAP);
+    // car-local lx runs 0..20 with lx=20 at the front, and the consist
+    // extends backwards from the anchor, hence the negation
+    // x' = lx - (carOffset + CAR_LEN): a translation, so normals are unchanged
+    const faces = CAR_FACES.map(([color, quad, n]) =>
+      [color, quad.map(([lx,ly,lz]) => [-(carOffset + (CAR_LEN - lx)), ly, lz]), n]);
+    folders.push({ name: `${c+1}両目`, faces });
+  }
+  return emitKML({
+    title: `JR加古川線 電車モデル (${numCars}両編成)`,
+    desc: `KML Polygonのみで構成した${numCars}両編成モデルです。`,
+    lat: lat0, lon: lon0, heading: headingDeg, alt: altOffset,
+    range: 80 + numCars*40, folders
+  });
+}
+
+function generateTrussKML(P, lat0, lon0, headingDeg, altOffset) {
+  const faces = buildTrussFaces(P);
+  // aim the camera at the middle of the span, not at the abutment
+  const look = destinationPoint(lat0, lon0, headingDeg, P.span/2);
+  return emitKML({
+    title: `トラス橋 (支間${P.span}m / 桁高${P.height}m / ${P.panels}パネル)`,
+    desc: `下路式ワーレントラス（垂直材付き）。支間${P.span}m、桁高${P.height}m、幅${P.width}m、部材${P.thick}m。`,
+    lat: lat0, lon: lon0, heading: headingDeg, alt: altOffset,
+    range: Math.round(P.span*1.8), look, folders: [{ name: "トラス橋", faces }]
+  });
+}
+
+// ---------------------------------------------------------------
+// KMZ = a zip archive holding doc.kml. Built by hand so the page keeps
+// its only dependency (Leaflet); DEFLATE comes from the browser's own
+// CompressionStream, with a stored (uncompressed) archive as fallback.
+// ---------------------------------------------------------------
+let CRC_TABLE = null;
+function crc32(buf) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+async function deflateRaw(bytes) {
+  if (typeof CompressionStream !== "function") return null;
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch (e) {
+    return null;                       // fall back to a stored entry
+  }
+}
+
+// files: [{ name, data: Uint8Array }]
+async function makeZip(files) {
+  const enc = new TextEncoder();
+  const parts = [];
+  let allCompressed = true;
+  for (const f of files) {
+    const def = await deflateRaw(f.data);
+    if (!def) allCompressed = false;
+    parts.push({
+      nameBytes: enc.encode(f.name), raw: f.data,
+      body: def || f.data, method: def ? 8 : 0, crc: crc32(f.data), offset: 0
+    });
+  }
+  let localSize = 0, cdSize = 0;
+  for (const p of parts) {
+    localSize += 30 + p.nameBytes.length + p.body.length;
+    cdSize += 46 + p.nameBytes.length;
+  }
+  const out = new Uint8Array(localSize + cdSize + 22);
+  const dv = new DataView(out.buffer);
+  const now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let o = 0;
+  const u16 = v => { dv.setUint16(o, v, true); o += 2; };
+  const u32 = v => { dv.setUint32(o, v, true); o += 4; };
+
+  for (const p of parts) {
+    p.offset = o;
+    u32(0x04034b50); u16(20); u16(0); u16(p.method); u16(time); u16(date);
+    u32(p.crc); u32(p.body.length); u32(p.raw.length); u16(p.nameBytes.length); u16(0);
+    out.set(p.nameBytes, o); o += p.nameBytes.length;
+    out.set(p.body, o); o += p.body.length;
+  }
+  const cdStart = o;
+  for (const p of parts) {
+    u32(0x02014b50); u16(20); u16(20); u16(0); u16(p.method); u16(time); u16(date);
+    u32(p.crc); u32(p.body.length); u32(p.raw.length);
+    u16(p.nameBytes.length); u16(0); u16(0); u16(0); u16(0); u32(0); u32(p.offset);
+    out.set(p.nameBytes, o); o += p.nameBytes.length;
+  }
+  const cdBytes = o - cdStart;
+  u32(0x06054b50); u16(0); u16(0); u16(parts.length); u16(parts.length);
+  u32(cdBytes); u32(cdStart); u16(0);
+  return { bytes: out, compressed: allCompressed };
+}
+
+// ---------------------------------------------------------------
+// COLLADA (.dae) export. Some viewers will only load a KMZ that holds a
+// real 3D mesh, so the same faces are written as an indexed triangle
+// mesh with one material per colour, placed by a KML <Model>.
+//
+// COLLADA Z_UP frame as a <Model> sees it:
+//   +X = east, +Y = north, +Z = up   (at heading 0)
+// Our local frame is x = forward, y = up, z = right, so at heading 0
+// (X,Y,Z) = (z,x,y). Passing a heading here rotates the mesh instead, so
+// doc.kml can ship heading 0 and the viewer has no rotation to get wrong.
+// ---------------------------------------------------------------
+function daeNum(v) {
+  let s = v.toFixed(4);
+  if (s.indexOf(".") !== -1) s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s === "-0" ? "0" : s;
+}
+function colorToRGB(c) {           // KML colour is aabbggrr
+  return [parseInt(c.slice(6,8),16)/255, parseInt(c.slice(4,6),16)/255, parseInt(c.slice(2,4),16)/255];
+}
+
+function buildDAE(faces, modelName, bakeHeadingDeg) {
+  const posMap = new Map(), pos = [];
+  const nrmMap = new Map(), nrm = [];
+  const intern = (map, arr, v) => {
+    const k = v[0] + "," + v[1] + "," + v[2];
+    let i = map.get(k);
+    if (i === undefined) { i = arr.length/3; map.set(k, i); arr.push(v[0], v[1], v[2]); }
+    return i;
+  };
+  // forward points along the baked bearing; right points 90 degrees off it
+  const hr = (bakeHeadingDeg || 0) * Math.PI/180;
+  const ch = Math.cos(hr), sh = Math.sin(hr);
+  const toDae = p => [
+    +(p[0]*sh + p[2]*ch).toFixed(4),   // east
+    +(p[0]*ch - p[2]*sh).toFixed(4),   // north
+    +p[1].toFixed(4)                   // up
+  ];
+
+  const byColor = new Map();
+  for (const [color, quad, n] of faces) {
+    const vi = quad.map(p => intern(posMap, pos, toDae(p)));
+    const ni = intern(nrmMap, nrm, toDae(n));
+    if (!byColor.has(color)) byColor.set(color, []);
+    const p = byColor.get(color);
+    p.push(vi[0],ni, vi[1],ni, vi[2],ni);     // quad -> two triangles
+    p.push(vi[0],ni, vi[2],ni, vi[3],ni);
+  }
+
+  const colors = [...byColor.keys()];
+  const matId = c => "m" + colors.indexOf(c);
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+  const effects = colors.map(c => {
+    const [r,g,b] = colorToRGB(c);
+    return `<effect id="${matId(c)}-fx"><profile_COMMON><technique sid="common"><lambert>` +
+      `<emission><color>0 0 0 1</color></emission>` +
+      `<diffuse><color>${daeNum(r)} ${daeNum(g)} ${daeNum(b)} 1</color></diffuse>` +
+      `</lambert></technique>` +
+      `<extra><technique profile="GOOGLEEARTH"><double_sided>1</double_sided></technique></extra>` +
+      `</profile_COMMON></effect>`;
+  }).join("");
+
+  const materials = colors.map(c =>
+    `<material id="${matId(c)}" name="${PART_NAMES[c] || matId(c)}"><instance_effect url="#${matId(c)}-fx"/></material>`
+  ).join("");
+
+  const src = (id, arr, params) =>
+    `<source id="${id}"><float_array id="${id}-a" count="${arr.length}">${arr.map(daeNum).join(" ")}</float_array>` +
+    `<technique_common><accessor source="#${id}-a" count="${arr.length/3}" stride="3">` +
+    params.map(p => `<param name="${p}" type="float"/>`).join("") +
+    `</accessor></technique_common></source>`;
+
+  const tris = colors.map(c => {
+    const p = byColor.get(c);
+    return `<triangles material="${matId(c)}" count="${p.length/6}">` +
+      `<input semantic="VERTEX" source="#geo-v" offset="0"/>` +
+      `<input semantic="NORMAL" source="#geo-n" offset="1"/>` +
+      `<p>${p.join(" ")}</p></triangles>`;
+  }).join("");
+
+  const binds = colors.map(c =>
+    `<instance_material symbol="${matId(c)}" target="#${matId(c)}"/>`
+  ).join("");
+
+  const dae =
+`<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+<asset><contributor><authoring_tool>Kakogawa Line 3D Model Generator</authoring_tool></contributor>` +
+`<created>${stamp}</created><modified>${stamp}</modified>` +
+`<unit name="meter" meter="1"/><up_axis>Z_UP</up_axis></asset>
+<library_effects>${effects}</library_effects>
+<library_materials>${materials}</library_materials>
+<library_geometries><geometry id="geo" name="${modelName}"><mesh>` +
+src("geo-p", pos, ["X","Y","Z"]) +
+src("geo-n", nrm, ["X","Y","Z"]) +
+`<vertices id="geo-v"><input semantic="POSITION" source="#geo-p"/></vertices>${tris}` +
+`</mesh></geometry></library_geometries>
+<library_visual_scenes><visual_scene id="scene" name="scene"><node id="model" name="${modelName}">` +
+`<instance_geometry url="#geo"><bind_material><technique_common>${binds}</technique_common></bind_material></instance_geometry>` +
+`</node></visual_scene></library_visual_scenes>
+<scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>
+`;
+  return { dae, vertices: pos.length/3, normals: nrm.length/3,
+           triangles: colors.reduce((a,c) => a + byColor.get(c).length/6, 0), materials: colors.length };
+}
+
+const DAE_NAME = "model.dae";
+
+function modelDocKML(o) {
+  const look = o.look || [o.lat, o.lon];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n` +
+    `<name>${o.title}</name>\n<description>${o.desc}</description>\n` +
+    `<LookAt><longitude>${look[1]}</longitude><latitude>${look[0]}</latitude><altitude>${o.alt}</altitude>` +
+    `<heading>0</heading><tilt>65</tilt><range>${o.range}</range><altitudeMode>relativeToGround</altitudeMode></LookAt>\n` +
+    `<Placemark><name>${o.title}</name>\n<Model id="model1">\n` +
+    `<altitudeMode>relativeToGround</altitudeMode>\n` +
+    `<Location><longitude>${o.lon}</longitude><latitude>${o.lat}</latitude><altitude>${o.alt}</altitude></Location>\n` +
+    `<Orientation><heading>${o.heading}</heading><tilt>0</tilt><roll>0</roll></Orientation>\n` +
+    `<Scale><x>1</x><y>1</y><z>1</z></Scale>\n` +
+    `<Link><href>${DAE_NAME}</href></Link>\n` +
+    `</Model>\n</Placemark>\n</Document>\n</kml>\n`;
+}
+
+// Faces in the shared local frame, for whichever model is selected.
+function currentModelFaces(numCars, P) {
+  if (mode === "truss") return buildTrussFaces(P);
+  const out = [];
+  for (let c = 0; c < numCars; c++) {
+    const carOffset = c*(CAR_LEN + CAR_GAP);
+    for (const [color, quad, n] of CAR_FACES)
+      out.push([color, quad.map(([lx,ly,lz]) => [-(carOffset + (CAR_LEN - lx)), ly, lz]), n]);
+  }
+  return out;
+}
+
+async function makeModelKMZ(faces, meta) {
+  const enc = new TextEncoder();
+  const built = buildDAE(faces, meta.modelName, meta.bake ? meta.heading : 0);
+  const kml = modelDocKML(meta.bake ? { ...meta, heading: 0 } : meta);
+  const z = await makeZip([
+    { name: "doc.kml", data: enc.encode(kml) },
+    { name: DAE_NAME, data: enc.encode(built.dae) }
+  ]);
+  return {
+    bytes: z.bytes, compressed: z.compressed,
+    stats: { vertices: built.vertices, normals: built.normals,
+             triangles: built.triangles, materials: built.materials },
+    rawSize: enc.encode(kml).length + enc.encode(built.dae).length
+  };
+}
+
+goBtn.addEventListener("click", async () => {
   persist();
   const lat = parseFloat(latEl.value);
   const lon = parseFloat(lonEl.value);
@@ -732,18 +1305,58 @@ document.getElementById("goBtn").addEventListener("click", () => {
     statusEl.className = "status err";
     return;
   }
-  const kml = generateKML(numCars, lat, lon, isNaN(heading) ? 0 : heading, isNaN(altOffset) ? 0 : altOffset);
-  const blob = new Blob([kml], {type: "application/vnd.google-earth.kml+xml"});
+  const hd = isNaN(heading) ? 0 : heading;
+  const alt = isNaN(altOffset) ? 0 : altOffset;
+
+  let P = null, stem, summary, title, desc, range, look = null;
+  if (mode === "truss") {
+    P = trussParams();
+    stem = `truss_bridge_${P.span}m_${P.panels}panels`;
+    summary = `トラス橋（支間${P.span}m / 桁高${P.height}m / 幅${P.width}m / ${P.panels}パネル`;
+    title = `トラス橋 (支間${P.span}m / 桁高${P.height}m / ${P.panels}パネル)`;
+    desc = `下路式ワーレントラス（垂直材付き）。支間${P.span}m、桁高${P.height}m、幅${P.width}m、部材${P.thick}m。`;
+    range = Math.round(P.span*1.8);
+    look = destinationPoint(lat, lon, hd, P.span/2);
+  } else {
+    stem = `kakogawa_line_train_${numCars}cars`;
+    summary = `${numCars}両編成（全長約${numCars*CAR_LEN + (numCars-1)*CAR_GAP}m`;
+    title = `JR加古川線 電車モデル (${numCars}両編成)`;
+    desc = `${numCars}両編成モデルです。`;
+    range = 80 + numCars*40;
+  }
+
+  let blob, filename, detail;
+  if (fmt === "kmz") {
+    const faces = currentModelFaces(numCars, P);
+    const z = await makeModelKMZ(faces, {
+      title, desc, modelName: mode === "truss" ? "truss" : "train",
+      lat, lon, heading: hd, alt, range, look, bake: bakeEl.checked
+    });
+    const st = z.stats;
+    blob = new Blob([z.bytes], { type: "application/vnd.google-earth.kmz" });
+    filename = stem + ".kmz";
+    detail = `三角形${st.triangles} / 頂点${st.vertices} / マテリアル${st.materials} / ${(blob.size/1024).toFixed(1)}KB` +
+             (bakeEl.checked ? ` / 向き${hd}°を焼き込み（heading=0）` : ` / heading=${hd}°`) +
+             (z.compressed ? "" : "（この環境では圧縮が使えないため無圧縮で格納）");
+  } else {
+    const kml = (mode === "truss")
+      ? generateTrussKML(P, lat, lon, hd, alt)
+      : generateTrainKML(numCars, lat, lon, hd, alt);
+    blob = new Blob([kml], { type: "application/vnd.google-earth.kml+xml" });
+    filename = stem + ".kml";
+    detail = `ポリゴン${(kml.match(/<Polygon>/g) || []).length}面 / ${(blob.size/1024).toFixed(1)}KB`;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `kakogawa_line_train_${numCars}cars.kml`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  const kb = (blob.size/1024).toFixed(1);
-  statusEl.textContent = `${numCars}両編成のKMLを書き出しました（全長約${numCars*CAR_LEN + (numCars-1)*CAR_GAP}m / ポリゴン${numCars*CAR_FACES.length}面 / ${kb}KB）。`;
+
+  statusEl.textContent = `${filename} を書き出しました。${summary} / ${detail}）。`;
   statusEl.className = "status ok";
 });
 </script>
