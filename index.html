@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加古川線 電車モデル編成ジェネレーター</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --cream: #EEE9D8;
+    --teal: #008C78;
+    --teal-dark: #00695A;
+    --liteblue: #8CC3D2;
+    --ink: #2B2B28;
+    --rail: #4a4a46;
+    --paper: #FAF8F2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    background-image:
+      repeating-linear-gradient(180deg, transparent, transparent 39px, rgba(0,0,0,0.035) 39px, rgba(0,0,0,0.035) 40px);
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+  header {
+    border-bottom: 3px solid var(--teal);
+    padding-bottom: 16px;
+    margin-bottom: 28px;
+    position: relative;
+  }
+  header::before {
+    content: "";
+    position: absolute;
+    left: 0; bottom: -3px;
+    width: 64px; height: 3px;
+    background: var(--liteblue);
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 6px;
+    letter-spacing: 0.02em;
+  }
+  .sub {
+    color: #6b6b64;
+    font-size: 0.92rem;
+    margin: 0;
+  }
+  .plate {
+    display: inline-block;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--teal-dark);
+    border: 1px solid var(--teal-dark);
+    border-radius: 3px;
+    padding: 1px 6px;
+    margin-bottom: 10px;
+  }
+  fieldset {
+    border: 1px solid #d8d4c4;
+    border-radius: 8px;
+    padding: 18px 20px 20px;
+    margin: 0 0 22px;
+    background: #fff;
+  }
+  legend {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--teal-dark);
+    padding: 0 8px;
+    letter-spacing: 0.03em;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+    color: #4a4a44;
+  }
+  .row { margin-bottom: 16px; }
+  .row:last-child { margin-bottom: 0; }
+  input[type=text], input[type=number] {
+    width: 100%;
+    padding: 9px 11px;
+    font-size: 0.95rem;
+    border: 1px solid #cfcabb;
+    border-radius: 6px;
+    background: #fdfcf8;
+    color: var(--ink);
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(0,140,120,0.15);
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .carcount {
+    display: flex;
+    gap: 8px;
+  }
+  .carcount button {
+    flex: 1;
+    padding: 10px 0;
+    border: 1px solid #cfcabb;
+    background: #fdfcf8;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    color: var(--ink);
+    transition: all .12s ease;
+  }
+  .carcount button.active {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+    font-weight: 600;
+  }
+  .hint {
+    font-size: 0.78rem;
+    color: #8a8578;
+    margin-top: 5px;
+  }
+  .go {
+    width: 100%;
+    padding: 14px 0;
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: var(--teal-dark);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.15);
+  }
+  .go:active { transform: translateY(1px); box-shadow: none; }
+  .go:disabled { background: #b7b4a5; cursor: not-allowed; box-shadow: none; }
+  .status {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    min-height: 1.2em;
+  }
+  .status.ok { color: var(--teal-dark); }
+  .status.err { color: #b3402a; }
+  .save-note {
+    font-size: 0.76rem;
+    color: #9a9585;
+    margin-top: 24px;
+    text-align: center;
+  }
+  .preview {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 30px;
+  }
+  .car-block {
+    height: 20px;
+    background: linear-gradient(180deg, var(--teal) 0 4px, var(--cream) 4px 16px, var(--liteblue) 16px 20px);
+    border: 1px solid #b8b39f;
+    border-radius: 2px;
+    flex: 1;
+  }
+  #map {
+    width: 100%;
+    height: 340px;
+    border-radius: 8px;
+    border: 1px solid #cfcabb;
+    margin-top: 4px;
+  }
+  .map-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+  }
+  .mini-btn {
+    display: inline-block;
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border: 1px solid #cfcabb;
+    background: #fdfcf8;
+    color: var(--ink);
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .mini-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
+  .mini-btn.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .paste-row {
+    display: flex;
+    gap: 8px;
+  }
+  .paste-row input { flex: 1; }
+  .link-btn {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .map-legend {
+    display: flex;
+    gap: 16px;
+    font-size: 0.75rem;
+    color: #6b6b64;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .map-legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.front { background: #d64545; }
+  .dot.aim { background: #2a6fd6; }
+  .swatch { width: 16px; height: 8px; background: rgba(0,140,120,0.55); border: 1px solid #00695A; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="plate">JR KAKOGAWA LINE &middot; MODEL BUILDER</div>
+    <h1>加古川線 電車モデル編成ジェネレーター</h1>
+    <p class="sub">車両数と先頭車両の位置を指定して、Google Earth Pro用のKMLファイルを書き出します。</p>
+  </header>
+
+  <fieldset>
+    <legend>編成</legend>
+    <div class="row">
+      <label>車両数</label>
+      <div class="carcount" id="carcount">
+        <button type="button" data-n="1">1両</button>
+        <button type="button" data-n="2">2両</button>
+        <button type="button" data-n="3">3両</button>
+        <button type="button" data-n="4">4両</button>
+        <button type="button" data-n="5">5両</button>
+      </div>
+      <div class="preview" id="preview"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>先頭車両（1両目）の位置</legend>
+    <div class="row">
+      <label>地図上でドラッグして位置と向きを決める</label>
+      <div class="map-toolbar">
+        <button type="button" class="mini-btn" id="satToggleBtn">🛰️ 衛星写真に切り替え</button>
+      </div>
+      <div id="map"></div>
+      <div class="map-legend">
+        <span><span class="dot front"></span>先頭位置（ドラッグで移動）</span>
+        <span><span class="dot aim"></span>方向ハンドル（ドラッグで進行方向を調整）</span>
+        <span><span class="swatch"></span>編成の footprint（車両数に応じて自動更新）</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>Google Mapからコピーした座標を貼り付け（例: 35.010897, 134.997929）</label>
+      <div class="paste-row">
+        <input type="text" id="pasteBox" placeholder="緯度, 経度 をここに貼り付け">
+        <a class="mini-btn link-btn" id="gmapLink" href="#" target="_blank" rel="noopener">Googleマップで開く ↗</a>
+      </div>
+      <div class="hint">Googleマップで場所を右クリック→座標をクリックするとコピーされます。ここに貼り付ければ自動で下欄・地図に反映されます。</div>
+    </div>
+    <div class="row grid2">
+      <div>
+        <label>緯度 (latitude)</label>
+        <input type="text" id="lat" placeholder="35.010897">
+      </div>
+      <div>
+        <label>経度 (longitude)</label>
+        <input type="text" id="lon" placeholder="134.997929">
+      </div>
+    </div>
+    <div class="row">
+      <label>進行方向（ヘディング / 0=北, 90=東, 180=南, 270=西）</label>
+      <input type="number" id="heading" min="0" max="359" step="1" value="0">
+      <div class="hint">指定した座標は「1両目の一番先頭（進行方向側の先端）」になります。編成はここから進行方向の逆側へ連結されます。</div>
+    </div>
+    <div class="row">
+      <label>標高調整（地表からの高さ、メートル）</label>
+      <input type="number" id="altOffset" step="0.5" value="0">
+      <div class="hint">鉄橋の上など、地表より高い場所に列車を置きたい場合はプラスの値を入れてください（例: 橋の高さが6mなら6）。マイナス値で下げることもできます。</div>
+    </div>
+  </fieldset>
+
+  <button class="go" id="goBtn">KMLファイルを生成してダウンロード</button>
+  <div class="status" id="status"></div>
+  <p class="save-note">入力内容はこのブラウザにCookieとして保存され、次回開いたときに復元されます。</p>
+</div>
+
+<script>
+const COOKIE_NAME = "kakogawa_train_builder_v1";
+
+function saveCookie(data) {
+  const val = encodeURIComponent(JSON.stringify(data));
+  const expires = new Date(Date.now() + 365*24*3600*1000).toUTCString();
+  try { document.cookie = `${COOKIE_NAME}=${val}; expires=${expires}; path=/; SameSite=Lax`; } catch(e) {}
+  try { localStorage.setItem(COOKIE_NAME, JSON.stringify(data)); } catch(e) {}
+}
+function loadCookie() {
+  const match = document.cookie.split("; ").find(r => r.startsWith(COOKIE_NAME + "="));
+  if (match) {
+    try { return JSON.parse(decodeURIComponent(match.split("=").slice(1).join("="))); }
+    catch(e) { /* fall through to localStorage */ }
+  }
+  try {
+    const raw = localStorage.getItem(COOKIE_NAME);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+}
+
+function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
+function destinationPoint(lat, lon, bearingDeg, distanceM) {
+  const R = 6378137;
+  const delta = distanceM / R;
+  const theta = toRad(bearingDeg);
+  const phi1 = toRad(lat), lam1 = toRad(lon);
+  const phi2 = Math.asin(Math.sin(phi1)*Math.cos(delta) + Math.cos(phi1)*Math.sin(delta)*Math.cos(theta));
+  const lam2 = lam1 + Math.atan2(Math.sin(theta)*Math.sin(delta)*Math.cos(phi1), Math.cos(delta)-Math.sin(phi1)*Math.sin(phi2));
+  return [toDeg(phi2), toDeg(lam2)];
+}
+function bearingBetween(lat1, lon1, lat2, lon2) {
+  const phi1 = toRad(lat1), phi2 = toRad(lat2), dLam = toRad(lon2-lon1);
+  const y = Math.sin(dLam)*Math.cos(phi2);
+  const x = Math.cos(phi1)*Math.sin(phi2) - Math.sin(phi1)*Math.cos(phi2)*Math.cos(dLam);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+let numCars = 1;
+let map, frontMarker, aimMarker, aimLine, footprint;
+const HALF_W = 1.45;
+const CAR_LEN = 20.0;
+const CAR_GAP = 1.0;
+const latEl = document.getElementById("lat");
+const lonEl = document.getElementById("lon");
+const headingEl = document.getElementById("heading");
+const altOffsetEl = document.getElementById("altOffset");
+const pasteEl = document.getElementById("pasteBox");
+const statusEl = document.getElementById("status");
+const previewEl = document.getElementById("preview");
+const carButtons = [...document.querySelectorAll("#carcount button")];
+
+function setNumCars(n) {
+  numCars = n;
+  carButtons.forEach(b => b.classList.toggle("active", parseInt(b.dataset.n) === n));
+  previewEl.innerHTML = "";
+  for (let i=0;i<n;i++){
+    const d = document.createElement("div");
+    d.className = "car-block";
+    previewEl.appendChild(d);
+  }
+  persist();
+  if (footprint) redrawFootprint();
+}
+carButtons.forEach(b => b.addEventListener("click", () => setNumCars(parseInt(b.dataset.n))));
+
+function tryParsePaste(text) {
+  const m = text.match(/(-?\d+(\.\d+)?)\s*[,\s]\s*(-?\d+(\.\d+)?)/);
+  if (m) {
+    latEl.value = m[1];
+    lonEl.value = m[3];
+    return true;
+  }
+  return false;
+}
+pasteEl.addEventListener("input", () => {
+  if (tryParsePaste(pasteEl.value)) { persist(); syncFieldsToMap(true); }
+});
+
+[latEl, lonEl].forEach(el => el.addEventListener("input", () => { persist(); syncFieldsToMap(true); }));
+headingEl.addEventListener("input", () => { persist(); updateAimMarker(); redrawFootprint(); });
+altOffsetEl.addEventListener("input", persist);
+
+function persist() {
+  saveCookie({
+    numCars,
+    lat: latEl.value,
+    lon: lonEl.value,
+    heading: headingEl.value,
+    altOffset: altOffsetEl.value
+  });
+}
+
+// restore
+(function restore(){
+  const d = loadCookie();
+  if (d) {
+    if (d.lat) latEl.value = d.lat;
+    if (d.lon) lonEl.value = d.lon;
+    if (d.heading !== undefined) headingEl.value = d.heading;
+    if (d.altOffset !== undefined) altOffsetEl.value = d.altOffset;
+    setNumCars(d.numCars || 1);
+  } else {
+    setNumCars(1);
+  }
+})();
+
+// ---------------------------------------------------------------
+// Map: drag the front marker to place the lead car, drag the blue
+// handle to aim the heading. Footprint preview updates live.
+// ---------------------------------------------------------------
+const DEFAULT_LAT = 35.01089650940908;
+const DEFAULT_LON = 134.99792882455134;
+
+function currentLatLon() {
+  const lat = parseFloat(latEl.value);
+  const lon = parseFloat(lonEl.value);
+  return [isNaN(lat) ? DEFAULT_LAT : lat, isNaN(lon) ? DEFAULT_LON : lon];
+}
+function currentHeading() {
+  const h = parseFloat(headingEl.value);
+  return isNaN(h) ? 0 : h;
+}
+function trainTotalLength() {
+  return numCars*CAR_LEN + Math.max(0, numCars-1)*CAR_GAP;
+}
+function dotIcon(color) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5)"></div>`,
+    iconSize: [16,16], iconAnchor: [8,8]
+  });
+}
+function redrawFootprint() {
+  const [lat, lon] = currentLatLon();
+  const heading = currentHeading();
+  const totalLen = trainTotalLength();
+  const halfW = HALF_W;
+  const fl = destinationPoint(lat, lon, heading-90, halfW);
+  const fr = destinationPoint(lat, lon, heading+90, halfW);
+  const rear = destinationPoint(lat, lon, heading+180, totalLen);
+  const rl = destinationPoint(rear[0], rear[1], heading-90, halfW);
+  const rr = destinationPoint(rear[0], rear[1], heading+90, halfW);
+  footprint.setLatLngs([fl, fr, rr, rl]);
+}
+function updateAimMarker() {
+  const [lat, lon] = currentLatLon();
+  const heading = currentHeading();
+  const aimPos = destinationPoint(lat, lon, heading, 30);
+  aimMarker.setLatLng(aimPos);
+  aimLine.setLatLngs([[lat, lon], aimPos]);
+}
+function updateGmapLink() {
+  const [lat, lon] = currentLatLon();
+  const link = document.getElementById("gmapLink");
+  if (link) link.href = `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(7)},${lon.toFixed(7)}`;
+}
+function syncFieldsToMap(pan) {
+  const [lat, lon] = currentLatLon();
+  frontMarker.setLatLng([lat, lon]);
+  updateAimMarker();
+  redrawFootprint();
+  updateGmapLink();
+  if (pan) map.panTo([lat, lon]);
+}
+
+function initMap() {
+  const [lat, lon] = currentLatLon();
+  map = L.map("map").setView([lat, lon], 17);
+
+  const streetLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  });
+  const satLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19,
+    attribution: "Tiles &copy; Esri"
+  });
+  streetLayer.addTo(map);
+  let satelliteOn = false;
+  const satBtn = document.getElementById("satToggleBtn");
+  satBtn.addEventListener("click", () => {
+    satelliteOn = !satelliteOn;
+    if (satelliteOn) {
+      map.removeLayer(streetLayer);
+      satLayer.addTo(map);
+      satBtn.textContent = "🗺️ 地図表示に戻す";
+      satBtn.classList.add("active");
+    } else {
+      map.removeLayer(satLayer);
+      streetLayer.addTo(map);
+      satBtn.textContent = "🛰️ 衛星写真に切り替え";
+      satBtn.classList.remove("active");
+    }
+  });
+
+  footprint = L.polygon([[lat,lon],[lat,lon],[lat,lon],[lat,lon]], {
+    color: "#00695A", weight: 1.5, fillColor: "#008C78", fillOpacity: 0.45
+  }).addTo(map);
+
+  aimLine = L.polyline([[lat,lon],[lat,lon]], { color: "#2a6fd6", weight: 2, dashArray: "4,4" }).addTo(map);
+
+  frontMarker = L.marker([lat, lon], { icon: dotIcon("#d64545"), draggable: true }).addTo(map);
+  aimMarker = L.marker(destinationPoint(lat, lon, currentHeading(), 30), { icon: dotIcon("#2a6fd6"), draggable: true }).addTo(map);
+
+  frontMarker.on("drag", () => {
+    const p = frontMarker.getLatLng();
+    latEl.value = p.lat.toFixed(7);
+    lonEl.value = p.lng.toFixed(7);
+    updateAimMarker();
+    redrawFootprint();
+    updateGmapLink();
+  });
+  frontMarker.on("dragend", persist);
+
+  aimMarker.on("drag", () => {
+    const front = frontMarker.getLatLng();
+    const aim = aimMarker.getLatLng();
+    headingEl.value = Math.round(bearingBetween(front.lat, front.lng, aim.lat, aim.lng));
+    aimLine.setLatLngs([front, aim]);
+    redrawFootprint();
+  });
+  aimMarker.on("dragend", persist);
+
+  map.on("click", (e) => {
+    latEl.value = e.latlng.lat.toFixed(7);
+    lonEl.value = e.latlng.lng.toFixed(7);
+    frontMarker.setLatLng(e.latlng);
+    updateAimMarker();
+    redrawFootprint();
+    updateGmapLink();
+    persist();
+  });
+
+  redrawFootprint();
+}
+initMap();
+syncFieldsToMap(true);
+
+// ---------------------------------------------------------------
+// Geometry (ported from the Python model): local frame
+//   x = 0..20 within a single car (both ends are identical & flat)
+//   y = height (0..~4.1), z = width (-1.45..1.45)
+// ---------------------------------------------------------------
+function kmlColor(r,g,b,a=255){
+  const h = v => v.toString(16).padStart(2,"0");
+  return h(a)+h(b)+h(g)+h(r);
+}
+const COLORS = {
+  CREAM: kmlColor(238,233,216),
+  TEAL: kmlColor(0,140,120),
+  LITEBLUE: kmlColor(140,195,210),
+  GRAY_SKIRT: kmlColor(110,110,110),
+  GRAY_ROOF: kmlColor(195,197,195),
+  GLASS: kmlColor(45,60,70),
+  DOOR: kmlColor(205,208,208),
+  DARKGRAY: kmlColor(80,80,80),
+  BOGIE: kmlColor(40,40,40),
+  HEADLIGHT: kmlColor(255,250,220)
+};
+
+// ---------------------------------------------------------------
+// Car geometry (local frame)
+//   x = 0..20 within a single car, y = height, z = width (-1.45..1.45)
+//
+//   solids : real boxes. Faces completely covered by another solid are
+//            dropped, so nothing invisible is ever written out.
+//   panels : windows / doors are decals on the body surface, so they are
+//            a single flat quad instead of a 6-face shell box.
+// ---------------------------------------------------------------
+function buildCarParts() {
+  const solids = [];
+  const panels = [];
+  const add  = (x0,x1,y0,y1,z0,z1,color) => solids.push([x0,x1,y0,y1,z0,z1,color]);
+  const side = (x0,x1,y0,y1,z,color)     => panels.push([2, z, x0,x1, y0,y1, color]);
+
+  add(0, CAR_LEN, 0.0, 0.85, -HALF_W, HALF_W, COLORS.GRAY_SKIRT);
+  add(0, CAR_LEN, 0.85, 1.75, -HALF_W, HALF_W, COLORS.LITEBLUE);
+  add(0, CAR_LEN, 1.75, 3.15, -HALF_W, HALF_W, COLORS.CREAM);
+  add(0, CAR_LEN, 3.15, 3.35, -HALF_W, HALF_W, COLORS.TEAL);
+  add(0, CAR_LEN, 3.35, 3.65, -HALF_W+0.15, HALF_W-0.15, COLORS.GRAY_ROOF);
+
+  [3.0,6.5,10.0,13.5,17.0].forEach(cx => add(cx-1.1,cx+1.1,3.65,3.85,-0.55,0.55,COLORS.DARKGRAY));
+
+  const px = 8.5;
+  add(px-0.05,px+0.05,3.85,4.05,-0.9,0.9,COLORS.DARKGRAY);
+  add(px-0.6,px-0.5,3.65,4.05,-0.05,0.05,COLORS.DARKGRAY);
+  add(px+0.5,px+0.6,3.65,4.05,-0.05,0.05,COLORS.DARKGRAY);
+  add(px-0.55,px+0.55,4.0,4.1,-0.02,0.02,COLORS.DARKGRAY);
+
+  [5.0,15.0].forEach(bx => add(bx-1.3,bx+1.3,-0.35,0.15,-1.2,1.2,COLORS.BOGIE));
+
+  const doorZones = [[1.6,2.9],[17.1,18.4]];
+  const inZone = (a,b,zones) => zones.some(([z0,z1]) => !(b<=z0 || a>=z1));
+
+  let x = 0.9;
+  const winW = 1.1, gap = 0.55;
+  while (x + winW < CAR_LEN - 0.9) {
+    if (!inZone(x, x+winW, doorZones)) {
+      side(x, x+winW, 2.05, 2.95,  HALF_W+0.03, COLORS.GLASS);
+      side(x, x+winW, 2.05, 2.95, -HALF_W-0.03, COLORS.GLASS);
+    }
+    x += winW + gap;
+  }
+  doorZones.forEach(([d0,d1]) => {
+    side(d0, d1, 0.9, 3.05,  HALF_W+0.03, COLORS.DOOR);
+    side(d0, d1, 0.9, 3.05, -HALF_W-0.03, COLORS.DOOR);
+    side(d0+0.1, d1-0.1, 2.0, 2.85,  HALF_W+0.05, COLORS.GLASS);
+    side(d0+0.1, d1-0.1, 2.0, 2.85, -HALF_W-0.05, COLORS.GLASS);
+  });
+
+  return { solids, panels };
+}
+
+// axis 0=x, 1=y, 2=z -> the two in-plane axes
+const OTHER = [[1,2],[0,2],[0,1]];
+const CULL_EPS = 1e-4;
+
+// A face is invisible when the space just outside it is filled by another
+// solid that fully spans the face rectangle.
+function faceCovered(box, solids, axis, dir) {
+  const p = (dir < 0 ? box[axis*2] : box[axis*2+1]) + dir*CULL_EPS;
+  const [u,v] = OTHER[axis];
+  for (const o of solids) {
+    if (o === box) continue;
+    if (p < o[axis*2] || p > o[axis*2+1]) continue;
+    if (o[u*2] <= box[u*2]+CULL_EPS && box[u*2+1]-CULL_EPS <= o[u*2+1] &&
+        o[v*2] <= box[v*2]+CULL_EPS && box[v*2+1]-CULL_EPS <= o[v*2+1]) return true;
+  }
+  return false;
+}
+
+function quadOnPlane(axis, plane, u0, u1, v0, v1) {
+  const pt = (a,b) => axis === 0 ? [plane,a,b] : (axis === 1 ? [a,plane,b] : [a,b,plane]);
+  return [pt(u0,v0), pt(u1,v0), pt(u1,v1), pt(u0,v1)];
+}
+
+// Visible faces of one car, in local coords. Identical for every car,
+// so this is computed exactly once.
+function buildCarFaces() {
+  const { solids, panels } = buildCarParts();
+  const faces = [];
+  for (const b of solids) {
+    for (let axis = 0; axis < 3; axis++) {
+      const [u,v] = OTHER[axis];
+      for (const dir of [-1, 1]) {
+        if (faceCovered(b, solids, axis, dir)) continue;
+        const plane = dir < 0 ? b[axis*2] : b[axis*2+1];
+        faces.push([b[6], quadOnPlane(axis, plane, b[u*2], b[u*2+1], b[v*2], b[v*2+1])]);
+      }
+    }
+  }
+  for (const [axis, plane, u0, u1, v0, v1, color] of panels) {
+    faces.push([color, quadOnPlane(axis, plane, u0, u1, v0, v1)]);
+  }
+  return faces;
+}
+
+const CAR_FACES = buildCarFaces();
+
+const PART_NAMES = {
+  [COLORS.GRAY_SKIRT]: "\u5e8a\u4e0b\u30fb\u30b9\u30ab\u30fc\u30c8",
+  [COLORS.LITEBLUE]:   "\u5e2f\uff08\u30e9\u30a4\u30c8\u30d6\u30eb\u30fc\uff09",
+  [COLORS.CREAM]:      "\u8eca\u4f53\uff08\u30af\u30ea\u30fc\u30e0\uff09",
+  [COLORS.TEAL]:       "\u5c4b\u6839\u80a9\uff08\u30b0\u30ea\u30fc\u30f3\uff09",
+  [COLORS.GRAY_ROOF]:  "\u5c4b\u6839",
+  [COLORS.DARKGRAY]:   "\u51b7\u623f\u30fb\u30d1\u30f3\u30bf\u30b0\u30e9\u30d5",
+  [COLORS.BOGIE]:      "\u53f0\u8eca",
+  [COLORS.GLASS]:      "\u7a93\u30ac\u30e9\u30b9",
+  [COLORS.DOOR]:       "\u30c9\u30a2"
+};
+
+function generateKML(numCars, lat0, lon0, headingDeg, altOffset) {
+  const R = 6378137.0;
+  const h = headingDeg * Math.PI/180;
+  const cosH = Math.cos(h), sinH = Math.sin(h);
+  const degPerM = 180/(Math.PI*R);
+  const lonScale = 1/Math.cos(lat0 * Math.PI/180);
+
+  // Shortest exact decimal: trims trailing zeros instead of padding them.
+  function num(v, d) {
+    let s = v.toFixed(d);
+    if (s.indexOf(".") !== -1) s = s.replace(/0+$/, "").replace(/\.$/, "");
+    return s === "-0" ? "0" : s;
+  }
+  // gx = distance behind the front tip, z = lateral offset, y = height
+  function coord(gx, y, z) {
+    const north = -gx*cosH - z*sinH;
+    const east  = -gx*sinH + z*cosH;
+    return num(lon0 + east*degPerM*lonScale, 8) + "," +
+           num(lat0 + north*degPerM, 8) + "," +
+           num(y + altOffset, 3);
+  }
+
+  const colors = [...new Set(CAR_FACES.map(f => f[0]))];
+  const styleIndex = new Map(colors.map((c,i) => [c,i]));
+  const styles = colors.map((c,i) =>
+    `<Style id="p${i}"><PolyStyle><color>${c}</color><outline>0</outline></PolyStyle><LineStyle><width>0</width></LineStyle></Style>`
+  ).join("");
+
+  const HEAD = '<Polygon><altitudeMode>relativeToGround</altitudeMode><outerBoundaryIs><LinearRing><coordinates>';
+  const TAIL = '</coordinates></LinearRing></outerBoundaryIs></Polygon>';
+
+  const folders = [];
+  for (let c = 0; c < numCars; c++) {
+    const carOffset = c*(CAR_LEN + CAR_GAP);
+    const byColor = new Map();
+    for (const [color, quad] of CAR_FACES) {
+      const pts = quad.map(([lx,ly,lz]) => coord(carOffset + (CAR_LEN - lx), ly, lz));
+      pts.push(pts[0]);
+      if (!byColor.has(color)) byColor.set(color, []);
+      byColor.get(color).push(HEAD + pts.join(" ") + TAIL);
+    }
+    // One Placemark per colour, all its faces inside a single MultiGeometry.
+    const marks = [...byColor].map(([color, polys]) =>
+      `<Placemark><name>${PART_NAMES[color] || "\u30d1\u30fc\u30c4"}</name><styleUrl>#p${styleIndex.get(color)}</styleUrl><MultiGeometry>${polys.join("")}</MultiGeometry></Placemark>`
+    ).join("");
+    folders.push(`<Folder><name>${c+1}\u4e21\u76ee</name>${marks}</Folder>`);
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>JR\u52a0\u53e4\u5ddd\u7dda \u96fb\u8eca\u30e2\u30c7\u30eb (${numCars}\u4e21\u7de8\u6210)</name>\n<description>KML Polygon\u306e\u307f\u3067\u69cb\u6210\u3057\u305f${numCars}\u4e21\u7de8\u6210\u30e2\u30c7\u30eb\u3067\u3059\u3002</description>\n<LookAt><longitude>${lon0}</longitude><latitude>${lat0}</latitude><altitude>${altOffset}</altitude><heading>0</heading><tilt>65</tilt><range>${80+numCars*40}</range><altitudeMode>relativeToGround</altitudeMode></LookAt>\n${styles}\n${folders.join("\n")}\n</Document>\n</kml>\n`;
+}
+
+document.getElementById("goBtn").addEventListener("click", () => {
+  persist();
+  const lat = parseFloat(latEl.value);
+  const lon = parseFloat(lonEl.value);
+  const heading = parseFloat(headingEl.value || "0");
+  const altOffset = parseFloat(altOffsetEl.value || "0");
+  statusEl.className = "status";
+  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    statusEl.textContent = "緯度・経度を正しく入力してください。";
+    statusEl.className = "status err";
+    return;
+  }
+  const kml = generateKML(numCars, lat, lon, isNaN(heading) ? 0 : heading, isNaN(altOffset) ? 0 : altOffset);
+  const blob = new Blob([kml], {type: "application/vnd.google-earth.kml+xml"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `kakogawa_line_train_${numCars}cars.kml`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  const kb = (blob.size/1024).toFixed(1);
+  statusEl.textContent = `${numCars}両編成のKMLを書き出しました（全長約${numCars*CAR_LEN + (numCars-1)*CAR_GAP}m / ポリゴン${numCars*CAR_FACES.length}面 / ${kb}KB）。`;
+  statusEl.className = "status ok";
+});
+</script>
+</body>
+</html>
